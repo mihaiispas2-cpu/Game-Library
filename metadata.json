@@ -1,0 +1,6 @@
+{
+  "name": "GameLibrary",
+  "description": "A high-fidelity modern gaming database website designed to help players discover, compare details, and read ratings/price history of video games.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
