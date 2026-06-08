@@ -33,6 +33,7 @@ export interface Game {
   longDescription: string;
   genres: string[];
   platforms: ('PC' | 'PS5' | 'XSX' | 'Switch' | 'PS4' | 'Xbox One')[];
+  features?: string[];
   rating: number; // 0-100% or 0-10 rating, let's use percent e.g. 96
   metacriticScore: number;
   userScore: number; // e.g. 9.2
@@ -43,10 +44,10 @@ export interface Game {
   developer: string;
   publisher: string;
   engine: string;
-  developmentTime: string;
-  budget: string;
-  gameplayDuration: string;
-  multiplayerSupport: string;
+  dev_time: string;
+  estimated_budget: string;
+  avg_playtime: string;
+  multiplayer: string;
   modSupport: string;
   drmInfo: string;
   optimizationScore: number;
@@ -54,4 +55,11 @@ export interface Game {
   deals: StoreDeal[];
   priceHistory: PriceHistoryPoint[];
   reviews: UserReview[];
+  trailer_url?: string | null;
+  screenshots?: string[];
+  steam_app_id?: string | null;
+  system_requirements?: {
+    minimum?: string;
+    recommended?: string;
+  } | null;
 }

@@ -1,10 +1,75 @@
+import { useState, useEffect } from 'react';
 import { Game } from '../types';
+import { supabase } from '../supabaseClient';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { format } from 'date-fns';
 
 interface PriceHistoryChartProps {
   game: Game;
 }
 
+interface PriceHistoryEntry {
+  id: string;
+  game_id: string;
+  price: number;
+  created_at: string;
+}
+
 export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
+  const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchHistory() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('price_history')
+        .select('*')
+        .eq('game_id', game.id)
+        .order('created_at', { ascending: true });
+        
+      if (!error && data) {
+        setHistory(data);
+      }
+      setLoading(false);
+    }
+    
+    fetchHistory();
+  }, [game.id]);
+
+  const currentPrice = game.lowestPrice || game.originalPrice || 0;
+  // Calculate launch price based on current discounted price and discount percentage
+  const launchPrice = game.discount > 0 ? currentPrice / (1 - game.discount / 100) : currentPrice;
+  
+  const historyPrices = history.map(h => h.price);
+  
+  // Historical low from all price records
+  const canShowAdditionalStats = historyPrices.length > 1;
+  const lowestEver = canShowAdditionalStats ? Math.min(...historyPrices) : currentPrice;
+  
+  // Average sale price (prices that are less than the launch price)
+  const salePrices = historyPrices.filter(p => p < launchPrice);
+  const avgSalePrice = salePrices.length > 0 ? salePrices.reduce((a, b) => a + b, 0) / salePrices.length : 0;
+  
+  const chartData = history.map(h => ({
+    date: format(new Date(h.created_at), 'MMM dd, yyyy'),
+    price: h.price
+  }));
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-[#111221] border border-slate-800 p-3 rounded-lg shadow-xl">
+          <p className="text-slate-400 text-xs mb-1 font-mono">{label}</p>
+          <p className="text-[#00e676] font-bold font-mono">
+            ${payload[0].value.toFixed(2)}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="py-12 px-4 lg:px-12 max-w-7xl mx-auto w-full space-y-8 bg-[#06070a]">
       
@@ -25,10 +90,10 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
             🚀 Launch Price
           </span>
           <span className="text-xl font-mono font-black text-slate-200 block">
-            $59.99
+            ${launchPrice.toFixed(2)}
           </span>
           <span className="text-[10px] text-slate-500 font-mono block">
-            June 21, 2024
+            {history.length > 0 ? format(new Date(history[0].created_at), 'MMM dd, yyyy') : game.releaseDate}
           </span>
         </div>
 
@@ -38,11 +103,13 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
             📈 Current Price
           </span>
           <span className="text-xl font-mono font-black text-[#64b5f6] block">
-            $39.99
+            ${currentPrice.toFixed(2)}
           </span>
-          <span className="text-[10px] text-[#00e676] font-mono font-bold block bg-[#12251a]/60 px-1.5 py-0.5 rounded w-max">
-            -33% OFF
-          </span>
+          {game.discount > 0 && (
+            <span className="text-[10px] text-[#00e676] font-mono font-bold block bg-[#12251a]/60 px-1.5 py-0.5 rounded w-max">
+              -{game.discount}% OFF
+            </span>
+          )}
         </div>
 
         {/* Card 3: Historical Low */}
@@ -51,11 +118,13 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
             🔥 Historical Low
           </span>
           <span className="text-xl font-mono font-black text-[#00e676] block">
-            $39.99
+            {canShowAdditionalStats ? `$${lowestEver.toFixed(2)}` : "Not enough data"}
           </span>
-          <span className="text-[10px] text-[#00e676] font-mono font-bold block">
-            Lowest Ever Price!
-          </span>
+          {canShowAdditionalStats && currentPrice <= lowestEver && (
+            <span className="text-[10px] text-[#00e676] font-mono font-bold block">
+              Lowest Ever Price!
+            </span>
+          )}
         </div>
 
         {/* Card 4: Avg. Sale Price */}
@@ -64,10 +133,10 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
             📊 Avg. Sale Price
           </span>
           <span className="text-xl font-mono font-black text-purple-400 block">
-            $45.99
+            {canShowAdditionalStats && avgSalePrice > 0 ? `$${avgSalePrice.toFixed(2)}` : "Not enough data"}
           </span>
           <span className="text-[10px] text-slate-500 font-mono block">
-            During sale events
+            Calculated from history
           </span>
         </div>
 
@@ -77,19 +146,21 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
       <div className="bg-[#111221] border border-slate-850 p-6 rounded-2xl space-y-6">
         
         {/* Savings banner row */}
-        <div className="bg-[#12251a]/65 border border-[#00e676]/20 p-4 rounded-xl flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="block text-xs font-mono uppercase text-[#00e676] font-bold">
-              Total Savings:
+        {launchPrice - currentPrice > 0 && (
+          <div className="bg-[#12251a]/65 border border-[#00e676]/20 p-4 rounded-xl flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="block text-xs font-mono uppercase text-[#00e676] font-bold">
+                Total Savings:
+              </span>
+              <p className="text-xs text-slate-350 font-medium">
+                Save <span className="text-[#00e676] font-bold">${(launchPrice - currentPrice).toFixed(2)}</span> compared to launch price
+              </p>
+            </div>
+            <span className="text-3xl font-mono font-black text-[#00e676]">
+              {Math.round(((launchPrice - currentPrice) / launchPrice) * 100)}%
             </span>
-            <p className="text-xs text-slate-350 font-medium">
-              Save <span className="text-[#00e676] font-bold">$20.00</span> compared to launch price
-            </p>
           </div>
-          <span className="text-4xl font-mono font-black text-[#00e676]">
-            33%
-          </span>
-        </div>
+        )}
 
         {/* Price Timeline Subheading */}
         <div className="space-y-1">
@@ -98,98 +169,60 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
           </h3>
         </div>
 
-        {/* Timeline Table list items */}
-        <div className="space-y-3 font-mono text-xs">
-          
-          {/* Row 1: Launch Price */}
-          <div className="flex items-center justify-between text-slate-400 py-1">
-            <div className="flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-700" />
-              <div>
-                <span className="font-semibold text-slate-200 block">Launch Price</span>
-                <span className="text-[10px] text-slate-500 font-sans block">June 2024</span>
-              </div>
-            </div>
-            <div className="flex-1 border-b border-dashed border-slate-800 mx-4 h-0" />
-            <span className="font-bold text-slate-200">
-              $59.99
-            </span>
+        {loading ? (
+          <div className="h-64 flex items-center justify-center text-slate-500 font-mono text-sm animate-pulse">
+            Loading price history...
           </div>
-
-          {/* Row 2: Summer Sale */}
-          <div className="flex items-center justify-between text-slate-400 py-1">
-            <div className="flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-700" />
-              <div>
-                <span className="font-semibold text-slate-200 block">Summer Sale</span>
-                <span className="text-[10px] text-slate-500 font-sans block">August 2024</span>
-              </div>
-            </div>
-            <div className="flex-1 border-b border-dashed border-slate-800 mx-4 h-0" />
-            <span className="font-bold text-slate-200">
-              $47.99
-            </span>
+        ) : history.length === 0 ? (
+          <div className="h-64 flex items-center justify-center text-slate-500 font-mono text-sm border border-dashed border-slate-800 rounded-xl">
+            No price history available yet
           </div>
-
-          {/* Row 3: Black Friday (Highlighted box!) */}
-          <div className="bg-[#112419] border border-[#00e676]/30 px-4 py-3 rounded-lg flex items-center justify-between text-slate-400">
-            <div className="flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#00e676]" />
-              <div>
-                <span className="font-extrabold text-[#00e676] block">Black Friday (Lowest Ever)</span>
-                <span className="text-[10px] text-[#00e676]/80 font-sans block">November 2024</span>
-              </div>
-            </div>
-            <div className="flex-1 border-b border-dashed border-[#00e676]/20 mx-4 h-0" />
-            <span className="font-extrabold text-[#00e676]">
-              $39.99
-            </span>
+        ) : (
+          <div className="h-80 w-full mt-6">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+                <XAxis 
+                  dataKey="date" 
+                  stroke="#6b7280" 
+                  fontSize={12}
+                  tickMargin={10}
+                  tickFormatter={(val) => val} // Can be refined to show fewer labels on mobile
+                />
+                <YAxis 
+                  stroke="#6b7280" 
+                  fontSize={12}
+                  tickFormatter={(value) => `$${value}`}
+                  domain={['dataMin - 10', 'dataMax + 10']}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Line 
+                  type="stepAfter" 
+                  dataKey="price" 
+                  stroke="#00e676" 
+                  strokeWidth={2} 
+                  dot={{ r: 4, strokeWidth: 2, fill: "#111221" }} 
+                  activeDot={{ r: 6, fill: "#00e676" }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
-
-          {/* Row 4: Winter Sale */}
-          <div className="flex items-center justify-between text-slate-400 py-1">
-            <div className="flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-700" />
-              <div>
-                <span className="font-semibold text-slate-200 block">Winter Sale</span>
-                <span className="text-[10px] text-slate-500 font-sans block">December 2024</span>
-              </div>
-            </div>
-            <div className="flex-1 border-b border-dashed border-slate-800 mx-4 h-0" />
-            <span className="font-bold text-slate-200">
-              $44.99
-            </span>
-          </div>
-
-          {/* Row 5: Current Price */}
-          <div className="flex items-center justify-between text-slate-400 py-1">
-            <div className="flex items-center gap-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#00b0ff]" />
-              <div>
-                <span className="font-semibold text-slate-200 block">Current Price</span>
-                <span className="text-[10px] text-slate-500 font-sans block">May 2025</span>
-              </div>
-            </div>
-            <div className="flex-1 border-b border-dashed border-slate-800 mx-4 h-0" />
-            <span className="font-bold text-slate-200">
-              $39.99
-            </span>
-          </div>
-
-        </div>
+        )}
 
         {/* 4. Best Time to Buy Information Panels */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-850">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t border-slate-850">
           
-          {/* Column 1: Major Sale Events */}
+          {/* Column 1: Lowest Price Note */}
           <div className="bg-[#18192a]/50 p-4 rounded-xl flex gap-3 text-xs leading-relaxed text-slate-400">
             <span className="text-amber-500 text-lg">💡</span>
             <div>
               <span className="font-bold text-slate-300 block mb-0.5">
-                Major Sale Events
+                Lowest price ever
               </span>
               <p className="text-[11px] font-sans">
-                Black Friday, Winter Sale, Summer Sale typically offer 30-50% discounts.
+                {canShowAdditionalStats 
+                  ? <>The lowest recorded price for this game was <strong className="text-[#00e676] font-mono">${lowestEver.toFixed(2)}</strong>.</>
+                  : "We need more historical data to determine the lowest ever price accurately."}
               </p>
             </div>
           </div>
@@ -202,7 +235,15 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
                 Current Deal Status
               </span>
               <p className="text-[11px] font-sans text-slate-350">
-                Currently at historical low price - <span className="text-[#00e676] font-semibold">Great time to buy!</span>
+                {canShowAdditionalStats ? (
+                  currentPrice <= lowestEver ? (
+                    <>Currently at historical low price - <span className="text-[#00e676] font-semibold">Great time to buy!</span></>
+                  ) : (
+                    <>Currently higher than historical low. Consider waiting for the next major sale event.</>
+                  )
+                ) : (
+                  <>Not enough data to analyze the current deal quality.</>
+                )}
               </p>
             </div>
           </div>

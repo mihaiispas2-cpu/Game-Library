@@ -1,7 +1,22 @@
-import React from 'react';
-import { Play, ChevronRight, Zap, Radio, Calendar, Clock, Eye, ShieldAlert, Cpu, MonitorPlay, BarChart, Gamepad2, ArrowUpRight, Flame } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, ChevronRight, Zap, Radio, Calendar, Clock, Eye, ShieldAlert, Cpu, MonitorPlay, BarChart, Gamepad2, ArrowUpRight, Flame, ArrowUp } from 'lucide-react';
+import { Game } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
 
-export default function News() {
+interface NewsProps {
+  games: Game[];
+  onSelectGame: (id: string) => void;
+}
+
+export default function News({ games, onSelectGame }: NewsProps) {
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 400);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   return (
     <div className="w-full">
       <style>
@@ -161,8 +176,14 @@ export default function News() {
                 tags: ["RPG", "Fantasy"],
                 days: "137 Days"
               }
-            ].map((game, i) => (
-              <div key={i} className="bg-[#11121d] rounded-xl border border-slate-800/80 overflow-hidden group hover:border-slate-700 transition-colors flex flex-col h-full">
+            ].map((game, i) => {
+              const matchedGame = games.find(g => g.title.toLowerCase().includes(game.title.toLowerCase().split(':')[0])) || games[0];
+              return (
+              <div 
+                key={i} 
+                onClick={() => onSelectGame(matchedGame.id)}
+                className="bg-[#11121d] rounded-xl border border-slate-800/80 overflow-hidden group hover:border-[#00b0ff]/50 hover:shadow-[0_0_20px_rgba(0,176,255,0.2)] transition-all duration-300 flex flex-col h-full cursor-pointer hover:-translate-y-1"
+              >
                 <div className="relative h-40 overflow-hidden">
                   <img src={game.img} alt={game.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" referrerPolicy="no-referrer" />
                   <div className="absolute top-3 right-3 px-2 py-1 bg-[#00b0ff] text-white text-[10px] font-bold rounded shadow-lg">
@@ -189,7 +210,8 @@ export default function News() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -500,6 +522,22 @@ export default function News() {
         </section>
 
       </div>
+
+      {/* Back to Top Button */}
+      <AnimatePresence>
+        {showBackToTop && (
+          <motion.button
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="fixed bottom-8 right-8 z-50 p-4 bg-[#0a0d14] border border-[#00b0ff]/30 text-[#00b0ff] rounded-full shadow-[0_0_20px_rgba(0,176,255,0.3)] hover:shadow-[0_0_30px_rgba(0,176,255,0.6)] hover:bg-[#00b0ff]/10 hover:-translate-y-1 transition-all group"
+          >
+            <ArrowUp className="w-6 h-6 group-hover:scale-110 transition-transform" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

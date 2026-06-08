@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Mail, Lock, User as UserIcon, Github, Twitch, Info, Gamepad2, ArrowRight } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -11,6 +12,20 @@ type AuthState = 'login' | 'register' | 'reset';
 
 export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const [authState, setAuthState] = useState<AuthState>('login');
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Clear state when changing modes
+  useEffect(() => {
+    setErrorMsg(null);
+    setEmail('');
+    setPassword('');
+    setUsername('');
+  }, [authState]);
 
   // Prevent background scrolling when modal is open
   useEffect(() => {
@@ -123,13 +138,28 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                       <p className="text-slate-400 text-sm">Access your wishlist, reviews, deals, and gaming profile.</p>
                     </div>
 
-                    <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+                    <form className="space-y-4" onSubmit={async (e) => {
+                      e.preventDefault();
+                      setErrorMsg(null);
+                      setIsLoading(true);
+                      const { error } = await supabase.auth.signInWithPassword({ email, password });
+                      setIsLoading(false);
+                      if (error) {
+                        setErrorMsg(error.message);
+                      } else {
+                        onClose();
+                        window.location.reload();
+                      }
+                    }}>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold uppercase tracking-wider text-slate-400 ml-1">Email</label>
                         <div className="relative">
                           <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                           <input 
                             type="email" 
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
                             placeholder="Enter your email" 
                             className="w-full bg-[#11121d] border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-[#00b0ff] focus:ring-1 focus:ring-[#00b0ff] transition-all"
                           />
@@ -142,6 +172,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                           <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                           <input 
                             type="password" 
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
                             placeholder="Enter your password" 
                             className="w-full bg-[#11121d] border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-[#00b0ff] focus:ring-1 focus:ring-[#00b0ff] transition-all"
                           />
@@ -167,9 +200,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                         </button>
                       </div>
 
-                      <button className="w-full py-3.5 bg-[#00b0ff] hover:bg-[#0090ff] text-white font-bold rounded-xl shadow-[0_0_20px_rgba(0,176,255,0.2)] hover:shadow-[0_0_30px_rgba(0,176,255,0.4)] transition-all transform hover:-translate-y-0.5 mt-2">
-                        Sign In
+                      <button disabled={isLoading} className="w-full py-3.5 bg-[#00b0ff] hover:bg-[#0090ff] text-white font-bold rounded-xl shadow-[0_0_20px_rgba(0,176,255,0.2)] hover:shadow-[0_0_30px_rgba(0,176,255,0.4)] transition-all transform hover:-translate-y-0.5 mt-2 disabled:opacity-50">
+                        {isLoading ? 'Signing In...' : 'Sign In'}
                       </button>
+                      {errorMsg && <p className="text-red-500 text-sm mt-2 text-center">{errorMsg}</p>}
                     </form>
 
                     <div className="relative flex items-center py-2">
@@ -228,7 +262,40 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                       <p className="text-slate-400 text-sm">Create an account to track your games and get personalized deals.</p>
                     </div>
 
-                    <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+                    <form className="space-y-4" onSubmit={async (e) => {
+                      e.preventDefault();
+                      setErrorMsg(null);
+                      setIsLoading(true);
+                      const { data, error } = await supabase.auth.signUp({ 
+                        email, 
+                        password,
+                        options: {
+                          data: {
+                            username: username || email.split('@')[0],
+                          }
+                        }
+                      });
+                      
+                      if (!error && data?.user) {
+                        // Create their profile entry
+                        const { error: profileError } = await supabase.from('profiles').upsert({
+                          id: data.user.id,
+                          nickname: username || email.split('@')[0]
+                        });
+                        
+                        if (profileError) {
+                          console.error("Failed to create profile:", profileError.message);
+                        }
+                      }
+
+                      setIsLoading(false);
+                      if (error) {
+                        setErrorMsg(error.message);
+                      } else {
+                        onClose();
+                        window.location.reload();
+                      }
+                    }}>
                       <div className="grid grid-cols-1 gap-4">
                         <div className="space-y-1.5">
                           <label className="text-xs font-bold uppercase tracking-wider text-slate-400 ml-1">Username</label>
@@ -236,6 +303,8 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                             <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                             <input 
                               type="text" 
+                              value={username}
+                              onChange={(e) => setUsername(e.target.value)}
                               placeholder="Choose a username" 
                               className="w-full bg-[#11121d] border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-[#a855f7] focus:ring-1 focus:ring-[#a855f7] transition-all"
                             />
@@ -248,6 +317,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                             <input 
                               type="email" 
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              required
                               placeholder="Enter your email" 
                               className="w-full bg-[#11121d] border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-[#a855f7] focus:ring-1 focus:ring-[#a855f7] transition-all"
                             />
@@ -260,6 +332,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
                             <input 
                               type="password" 
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              required
                               placeholder="Create a password" 
                               className="w-full bg-[#11121d] border border-slate-700/50 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-[#a855f7] focus:ring-1 focus:ring-[#a855f7] transition-all"
                             />
@@ -293,9 +368,10 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                         </label>
                       </div>
 
-                      <button className="w-full py-3.5 bg-gradient-to-r from-[#a855f7] to-[#8b5cf6] hover:from-[#9333ea] hover:to-[#7c3aed] text-white font-bold rounded-xl shadow-[0_0_20px_rgba(168,85,247,0.2)] hover:shadow-[0_0_30px_rgba(168,85,247,0.4)] transition-all transform hover:-translate-y-0.5 mt-2">
-                        Create Account
+                      <button disabled={isLoading} className="w-full py-3.5 bg-gradient-to-r from-[#a855f7] to-[#8b5cf6] hover:from-[#9333ea] hover:to-[#7c3aed] text-white font-bold rounded-xl shadow-[0_0_20px_rgba(168,85,247,0.2)] hover:shadow-[0_0_30px_rgba(168,85,247,0.4)] transition-all transform hover:-translate-y-0.5 mt-2 disabled:opacity-50">
+                        {isLoading ? 'Creating Account...' : 'Create Account'}
                       </button>
+                      {errorMsg && <p className="text-red-500 text-sm mt-2 text-center">{errorMsg}</p>}
                     </form>
 
                     <div className="text-center pt-2">

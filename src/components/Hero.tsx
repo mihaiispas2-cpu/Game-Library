@@ -87,7 +87,7 @@ export default function Hero({ game }: HeroProps) {
                 Gameplay
               </span>
               <span className="block text-xl font-bold text-slate-200 mt-1">
-                {game.gameplayDuration.replace(' hours', '').replace('h', '')}h
+                {game.avg_playtime.split('-')[0].replace(/h+\+?$/i, '').replace(' hours', '').trim()}h+
               </span>
             </div>
 

@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRight, ChevronLeft, Play, Star, Plus, Check, Clock, TrendingUp, Monitor, Zap } from 'lucide-react';
 import { Game } from '../types';
+import { supabase } from '../supabaseClient';
 
 interface FeaturedHeroCarouselProps {
   games: Game[];
   wishlist: string[];
   onToggleWishlist: (id: string) => void;
   onSelectGame: (id: string) => void;
+  onFeaturedChange?: (game: Game) => void;
 }
 
 const getFeaturedData = (game: Game) => {
@@ -18,34 +20,133 @@ const getFeaturedData = (game: Game) => {
   return { label: 'FEATURED', color: 'bg-blue-600', icon: Zap };
 };
 
-export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist, onSelectGame }: FeaturedHeroCarouselProps) {
-  // Select top deals based on discount and rating
-  const featuredGames = [...games].sort((a, b) => b.discount - a.discount || b.metacriticScore - a.metacriticScore).slice(0, 5);
-  
+export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist, onSelectGame, onFeaturedChange }: FeaturedHeroCarouselProps) {
+  const [featuredGames, setFeaturedGames] = useState<Game[]>([]);
+  const [categoryLabel, setCategoryLabel] = useState<string>('FEATURED');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    const fetchDynamicGames = async () => {
+      try {
+        const { data: categories } = await supabase
+          .from('hero_categories')
+          .select('*')
+          .eq('is_active', true);
+
+        if (!categories || categories.length === 0) {
+          setFeaturedGames([...games].sort((a, b) => b.discount - a.discount || b.metacriticScore - a.metacriticScore).slice(0, 5));
+          return;
+        }
+
+        const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+        setCategoryLabel(randomCategory.label);
+
+        let query = supabase.from('games').select('*').not('cover_image', 'is', null);
+
+        if (randomCategory.query_type === 'top_rated') {
+          query = query.order('rating', { ascending: false });
+        } else if (randomCategory.query_type === 'by_year') {
+          query = query.filter('release_date', 'ilike', `%${randomCategory.filter_value}%`).order('rating', { ascending: false });
+        } else if (randomCategory.query_type === 'by_genre') {
+          query = query.contains('genres', [randomCategory.filter_value]).order('rating', { ascending: false });
+        } else if (randomCategory.query_type === 'best_deals') {
+          query = query.gt('discount', 0).order('discount', { ascending: false });
+        } else if (randomCategory.query_type === 'latest') {
+          query = query.order('release_date', { ascending: false });
+        } else if (randomCategory.query_type === 'featured') {
+          query = query.eq('is_featured', true).order('rating', { ascending: false });
+        }
+
+        const { data, error } = await query.limit(randomCategory.limit_count || 5);
+
+        if (!error && data && data.length > 0) {
+          const mappedGames: Game[] = data.map((d: any) => ({
+            id: d.id,
+            title: d.title || 'Unknown Title',
+            coverImage: d.coverImage || d.cover_image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80',
+            heroImage: d.heroImage || d.cover_image || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80',
+            shortDescription: d.description || d.shortDescription || '',
+            longDescription: d.description || d.longDescription || '',
+            genres: d.genres || ['Action'],
+            platforms: d.platforms || ['PC'],
+            features: d.features || [],
+            rating: d.rating || d.score || 0,
+            metacriticScore: d.rating || d.score || d.metacriticScore || 0,
+            userScore: d.rating ? d.rating / 10 : (d.score ? d.score / 10 : 0),
+            lowestPrice: d.price || 0,
+            originalPrice: d.price || 0,
+            discount: d.discount || 0,
+            releaseDate: d.release_date || d.releaseDate || 'TBA',
+            developer: d.developer || 'Unknown Developer',
+            publisher: d.publisher || '',
+            engine: d.engine || '',
+            dev_time: d.dev_time || '',
+            estimated_budget: d.estimated_budget || '',
+            avg_playtime: d.avg_playtime || '',
+            multiplayer: d.multiplayer || '',
+            modSupport: d.modSupport || '',
+            drmInfo: d.drmInfo || '',
+            optimizationScore: d.optimizationScore || 0,
+            performanceRating: d.performanceRating || '',
+            deals: d.deals || [],
+            priceHistory: d.priceHistory || [],
+            reviews: d.reviews || [],
+            trailer_url: d.trailer_url || null,
+            screenshots: d.screenshots || [],
+            steam_app_id: d.steam_app_id || null,
+            system_requirements: d.system_requirements || null
+          }));
+          setFeaturedGames(mappedGames);
+        } else {
+          // fallback
+          setFeaturedGames([...games].sort((a, b) => b.discount - a.discount || b.metacriticScore - a.metacriticScore).slice(0, 5));
+        }
+      } catch (e) {
+        setFeaturedGames([...games].sort((a, b) => b.discount - a.discount || b.metacriticScore - a.metacriticScore).slice(0, 5));
+      }
+    };
+
+    if (games.length > 0 && featuredGames.length === 0) {
+      fetchDynamicGames();
+    }
+  }, [games, featuredGames.length]);
 
   // Auto-rotate every 60 seconds (60000ms)
   useEffect(() => {
+    if (featuredGames.length === 0) return;
     const timer = setInterval(() => {
       setCurrentIndex((current) => (current + 1) % featuredGames.length);
     }, 60000);
     return () => clearInterval(timer);
   }, [featuredGames.length]);
 
+  // Reset expansion state and invoke callback when game changes
+  useEffect(() => {
+    setIsExpanded(false);
+    if (onFeaturedChange && featuredGames.length > 0) {
+      onFeaturedChange(featuredGames[currentIndex]);
+    }
+  }, [currentIndex, featuredGames, onFeaturedChange]);
+
   const goToNext = () => {
+    if (featuredGames.length === 0) return;
     setCurrentIndex((current) => (current + 1) % featuredGames.length);
   };
 
   const goToPrev = () => {
+    if (featuredGames.length === 0) return;
     setCurrentIndex((current) => (current - 1 + featuredGames.length) % featuredGames.length);
   };
+
+  if (featuredGames.length === 0) return null;
 
   const currentGame = featuredGames[currentIndex];
   const featureData = getFeaturedData(currentGame);
   const isWishlisted = wishlist.includes(currentGame.id);
 
   return (
-    <div className="relative min-h-[600px] lg:min-h-[700px] w-full bg-[#06070a] overflow-hidden group">
+    <div className="relative h-[650px] lg:h-[750px] w-full bg-[#06070a] overflow-hidden group">
       
       {/* Background artwork with crossfade and slow pan */}
       <AnimatePresence mode="popLayout">
@@ -75,13 +176,41 @@ export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist
       <div className="absolute inset-0 bg-gradient-to-r from-[#06070a]/95 via-[#06070a]/80 to-[#06070a]/10 z-10 pointer-events-none" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#06070a] via-transparent to-transparent z-10 pointer-events-none" />
 
+      {/* Up Next Game Preview Panel (Fixed Absolute Top Right) */}
+      <div className="absolute top-6 right-6 lg:top-10 lg:right-12 z-30 hidden lg:block">
+        <div 
+          className="w-56 bg-[#0b0c15]/80 backdrop-blur-lg border border-slate-700 p-2.5 rounded-2xl flex items-center gap-3 cursor-pointer hover:bg-[#11121d]/90 hover:border-[#00b0ff]/50 hover:shadow-[0_0_20px_rgba(0,176,255,0.2)] hover:-translate-y-1 transition-all duration-300 group"
+          onClick={() => onSelectGame(featuredGames[(currentIndex + 1) % featuredGames.length].id)}
+        >
+          <div className="w-12 h-16 rounded-lg overflow-hidden flex-shrink-0">
+            <img 
+              src={featuredGames[(currentIndex + 1) % featuredGames.length].coverImage} 
+              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+              alt="Next Game"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Up Next</p>
+            <h4 className="text-white font-bold text-xs truncate group-hover:text-[#00b0ff] transition-colors">
+              {featuredGames[(currentIndex + 1) % featuredGames.length].title}
+            </h4>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[#00e676] font-mono text-[10px] font-bold">
+                 ${featuredGames[(currentIndex + 1) % featuredGames.length].lowestPrice}
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+        </div>
+      </div>
+
       {/* Main Content Area */}
-      <div className="relative z-20 max-w-7xl mx-auto px-4 lg:px-12 py-16 md:py-24 w-full h-full flex flex-col justify-center min-h-[600px] lg:min-h-[700px]">
+      <div className="relative z-20 max-w-7xl mx-auto px-4 lg:px-12 py-16 md:py-24 w-full h-full flex flex-col justify-center">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 w-full">
           
           {/* Left Column - Content */}
-          <div className="lg:col-span-7 flex flex-col justify-center space-y-6">
-            <AnimatePresence mode="wait">
+          <div className="lg:col-span-7 flex flex-col justify-center space-y-6 min-h-[450px]">
+            <AnimatePresence mode="popLayout">
               <motion.div
                 key={currentGame.id}
                 initial={{ opacity: 0, y: 30 }}
@@ -90,10 +219,9 @@ export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist
                 transition={{ duration: 0.5, ease: "easeOut" }}
                 className="space-y-6"
               >
-                {/* Feature Label Tag */}
-                <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold tracking-widest text-[10px] uppercase text-white shadow-lg ${featureData.color} shadow-${featureData.color.replace('bg-', '')}/30`}>
-                  <featureData.icon className="w-3.5 h-3.5 fill-current" />
-                  {featureData.label}
+                {/* Feature Category Label */}
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-bold tracking-widest text-[10px] uppercase text-white shadow-lg bg-blue-600/80 border border-blue-400/30 backdrop-blur-md">
+                  {categoryLabel}
                 </div>
 
                 {/* Title and Developer */}
@@ -124,9 +252,19 @@ export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist
                 </div>
 
                 {/* Description */}
-                <p className="text-slate-300 text-sm md:text-base max-w-xl leading-relaxed drop-shadow-md brightness-110">
-                  {currentGame.shortDescription}
-                </p>
+                <div>
+                  <p className={`text-slate-300 text-sm md:text-base max-w-xl leading-relaxed drop-shadow-md brightness-110 ${!isExpanded ? 'line-clamp-3' : ''}`}>
+                    {currentGame.shortDescription}
+                  </p>
+                  {currentGame.shortDescription && currentGame.shortDescription.length > 150 && (
+                    <button 
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      className="text-[#00b0ff] text-sm mt-1 hover:text-white transition-colors"
+                    >
+                      {isExpanded ? 'View less' : 'View more'}
+                    </button>
+                  )}
+                </div>
 
                 {/* Quick Stats Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-xl pt-2">
@@ -146,7 +284,7 @@ export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist
                     <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider mb-1 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-[#00e676]" /> Hours
                     </span>
-                    <span className="text-xl font-bold text-[#00e676] leading-none">{currentGame.gameplayDuration.split('-')[0]}h+</span>
+                    <span className="text-xl font-bold text-[#00e676] leading-none">{currentGame.avg_playtime.split('-')[0].replace(/h+\+?$/i, '').trim()}h+</span>
                   </div>
                   <div className="bg-[#0b0c15]/80 backdrop-blur-md border border-slate-700/50 p-3 rounded-xl flex flex-col justify-center">
                     <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider mb-1">
@@ -190,112 +328,79 @@ export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
-                    <button 
-                      onClick={() => onSelectGame(currentGame.id)}
-                      className="flex-1 sm:flex-none px-6 py-4 bg-[#00b0ff] hover:bg-[#0090ff] text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(0,176,255,0.3)] hover:shadow-[0_0_30px_rgba(0,176,255,0.5)] transform hover:-translate-y-0.5 whitespace-nowrap"
-                    >
-                      View Details
-                    </button>
-                    <button 
-                      onClick={() => onSelectGame(currentGame.id)}
-                      className="flex-1 sm:flex-none px-6 py-4 bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold rounded-xl border border-slate-600 transition-all transform hover:-translate-y-0.5 whitespace-nowrap backdrop-blur-md"
-                    >
-                      Compare Prices
-                    </button>
-                    <button 
-                      onClick={() => onToggleWishlist(currentGame.id)}
-                      className="w-14 h-14 flex items-center justify-center bg-slate-800/80 hover:bg-slate-700/80 text-white border border-slate-600 rounded-xl transition-all hover:scale-105 active:scale-95 disabled:bg-[#00e676] disabled:border-[#00e676]"
-                      aria-label="Wishlist"
-                    >
-                      <AnimatePresence mode="wait">
-                        {isWishlisted ? (
-                          <motion.div key="check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                            <Check className="w-6 h-6 text-[#00e676]" />
-                          </motion.div>
-                        ) : (
-                          <motion.div key="plus" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                            <Plus className="w-6 h-6" />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </button>
+                  <div className="flex flex-col gap-3 w-full sm:w-auto">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button 
+                        onClick={() => onSelectGame(currentGame.id)}
+                        className="flex-1 sm:flex-none px-6 py-4 bg-[#00b0ff] hover:bg-[#0090ff] text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(0,176,255,0.3)] hover:shadow-[0_0_30px_rgba(0,176,255,0.5)] transform hover:-translate-y-0.5 whitespace-nowrap"
+                      >
+                        View Details
+                      </button>
+                      <button 
+                        onClick={() => onSelectGame(currentGame.id)}
+                        className="flex-1 sm:flex-none px-6 py-4 bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold rounded-xl border border-slate-600 transition-all transform hover:-translate-y-0.5 whitespace-nowrap backdrop-blur-md"
+                      >
+                        Compare Prices
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => onToggleWishlist(currentGame.id)}
+                        className="w-14 h-14 flex items-center justify-center bg-slate-800/80 hover:bg-slate-700/80 text-white border border-slate-600 rounded-xl transition-all hover:scale-105 active:scale-95 disabled:bg-[#00e676] disabled:border-[#00e676]"
+                        aria-label="Wishlist"
+                      >
+                        <AnimatePresence mode="wait">
+                          {isWishlisted ? (
+                            <motion.div key="check" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                              <Check className="w-6 h-6 text-[#00e676]" />
+                            </motion.div>
+                          ) : (
+                            <motion.div key="plus" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                              <Plus className="w-6 h-6" />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </button>
+                      
+                      {/* Watch Trailer CTA */}
+                      <button 
+                        onClick={() => onSelectGame(currentGame.id)}
+                        className="group flex-1 sm:flex-none flex items-center justify-center gap-3 px-6 h-14 rounded-xl bg-black/40 border border-white/20 hover:bg-white hover:text-black transition-all backdrop-blur-md"
+                      >
+                        <span className="w-6 h-6 rounded-full bg-white/20 group-hover:bg-black/10 flex items-center justify-center">
+                          <Play className="w-3 h-3 text-white group-hover:text-black fill-current" />
+                        </span>
+                        <span className="font-bold tracking-wide">Watch Trailer</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
               </motion.div>
             </AnimatePresence>
           </div>
-
-          {/* Right Column - Navigation and Previews (visible on large screens) */}
-          <div className="lg:col-span-5 hidden lg:flex flex-col justify-end items-end pb-8">
-            <div className="flex flex-col items-end gap-6">
-              
-              {/* Watch Trailer Ghost CTA */}
-              <button className="group flex items-center gap-3 px-5 py-3 rounded-full bg-black/40 border border-white/20 hover:bg-white hover:text-black transition-all backdrop-blur-md">
-                <span className="w-8 h-8 rounded-full bg-white/20 group-hover:bg-black/10 flex items-center justify-center">
-                  <Play className="w-4 h-4 text-white group-hover:text-black fill-current" />
-                </span>
-                <span className="font-bold tracking-wide">Watch Trailer</span>
-              </button>
-
-              {/* Next Game Preview Panel */}
-              <div 
-                className="w-72 bg-[#0b0c15]/80 backdrop-blur-lg border border-slate-700 p-3 rounded-2xl flex items-center gap-4 cursor-pointer hover:bg-slate-800/80 transition-colors group"
-                onClick={goToNext}
-              >
-                <div className="w-16 h-20 rounded-lg overflow-hidden flex-shrink-0">
-                  <img 
-                    src={featuredGames[(currentIndex + 1) % featuredGames.length].coverImage} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    alt="Next Game"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Up Next</p>
-                  <h4 className="text-white font-bold text-sm truncate group-hover:text-[#00b0ff] transition-colors">
-                    {featuredGames[(currentIndex + 1) % featuredGames.length].title}
-                  </h4>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-[#00e676] font-mono text-xs font-bold">
-                       ${featuredGames[(currentIndex + 1) % featuredGames.length].lowestPrice}
-                    </span>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-white transition-colors" />
-              </div>
-
-            </div>
-          </div>
-
         </div>
 
         {/* Bottom Navigation controls (Mobile & Desktop) */}
         <div className="absolute bottom-8 left-4 lg:left-12 right-4 lg:right-12 z-20 flex items-center justify-between">
           
-          {/* Arrow Navigation */}
-          <div className="flex items-center gap-3">
-             <button 
-              onClick={goToPrev}
-              className="w-10 h-10 rounded-full bg-[#11121d]/80 border border-slate-700 hover:bg-[#00b0ff] hover:border-[#00b0ff] text-slate-300 hover:text-white transition-all flex items-center justify-center backdrop-blur-sm"
-              aria-label="Previous Deal"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={goToNext}
-              className="w-10 h-10 rounded-full bg-[#11121d]/80 border border-slate-700 hover:bg-[#00b0ff] hover:border-[#00b0ff] text-slate-300 hover:text-white transition-all flex items-center justify-center backdrop-blur-sm lg:hidden"
-              aria-label="Next Deal"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
+          {/* Previous Arrow */}
+          <button 
+            type="button"
+            onClick={goToPrev}
+            className="w-10 h-10 rounded-full bg-[#11121d]/80 border border-slate-700 hover:bg-[#00b0ff] hover:border-[#00b0ff] text-slate-300 hover:text-white transition-all flex items-center justify-center backdrop-blur-sm"
+            aria-label="Previous Deal"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
 
           {/* Carousel Dot Indicators */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">
             {featuredGames.map((game, idx) => (
               <button
                 key={game.id}
+                type="button"
                 onClick={() => setCurrentIndex(idx)}
                 className={`transition-all duration-300 rounded-full ${
                   idx === currentIndex 
@@ -306,6 +411,16 @@ export default function FeaturedHeroCarousel({ games, wishlist, onToggleWishlist
               />
             ))}
           </div>
+
+          {/* Next Arrow */}
+          <button 
+            type="button"
+            onClick={goToNext}
+            className="w-10 h-10 rounded-full bg-[#11121d]/80 border border-slate-700 hover:bg-[#00b0ff] hover:border-[#00b0ff] text-slate-300 hover:text-white transition-all flex items-center justify-center backdrop-blur-sm"
+            aria-label="Next Deal"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
         </div>
 
       </div>

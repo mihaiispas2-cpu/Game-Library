@@ -1,8 +1,13 @@
-import { useState } from 'react';
-import { ArrowLeft, Search, Clock, ChevronRight, ChevronLeft, Heart, Check, Flame, Gift, Calendar, Sparkles, TrendingUp, Tags } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Search, Clock, ChevronRight, ChevronLeft, Heart, Check, Flame, Gift, Calendar, Sparkles, TrendingUp, Tags, ArrowUp } from 'lucide-react';
+import { Game } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface DealsProps {
+  games: Game[];
+  onSelectGame: (id: string) => void;
   onViewChange: (view: 'home' | 'browse' | 'topRated' | 'deals') => void;
+  onGoBack: () => void;
 }
 
 const mockHotDeals = [
@@ -110,8 +115,16 @@ const mockFreeGames = [
   { title: 'Star Wars Jedi: Survivor', dev: 'Prime Gaming', time: '12 days 4 hours', image: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80' },
 ];
 
-export default function Deals({ onViewChange }: DealsProps) {
+export default function Deals({ games, onSelectGame, onViewChange, onGoBack }: DealsProps) {
   const [internalSearch, setInternalSearch] = useState('');
+
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 400);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0d1017]">
@@ -132,11 +145,11 @@ export default function Deals({ onViewChange }: DealsProps) {
         <div className="relative z-20 max-w-7xl mx-auto px-4 lg:px-8 pt-8 w-full">
           {/* Back Button */}
           <button 
-            onClick={() => onViewChange('home')}
+            onClick={onGoBack}
             className="flex items-center gap-2 bg-[#12141c]/60 border border-slate-800 hover:border-slate-600 px-4 py-2 rounded-lg text-sm font-medium text-slate-200 transition-colors w-max mb-6 backdrop-blur-sm"
           >
             <ArrowLeft className="w-4 h-4" />
-            Back to Home
+            Back
           </button>
           
           <div className="bg-[#ff003c] text-white px-3 py-1 rounded-sm font-bold text-xs inline-block mb-4">
@@ -279,8 +292,12 @@ export default function Deals({ onViewChange }: DealsProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {mockHotDeals.map((deal) => (
-                <div key={deal.title} className="bg-[#12141c] border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700 transition-colors flex flex-col">
+              {mockHotDeals.map((deal) => {
+                const matchedGame = games.find(g => g.title.toLowerCase().includes(deal.title.toLowerCase().split(':')[0])) || games[0];
+                return (
+                <div key={deal.title} 
+                     onClick={() => onSelectGame(matchedGame.id)}
+                     className="bg-[#12141c] border border-slate-800 rounded-xl overflow-hidden hover:border-[#00b0ff]/50 transition-all duration-300 flex flex-col cursor-pointer group hover:shadow-[0_0_20px_rgba(0,176,255,0.2)] hover:-translate-y-1">
                   
                   <div className="relative h-40 bg-slate-900 border-b border-slate-800">
                     <img src={deal.image} alt={deal.title} className="w-full h-full object-cover" />
@@ -329,7 +346,7 @@ export default function Deals({ onViewChange }: DealsProps) {
 
                     <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-4 bg-[#0d1017] p-2 rounded border border-slate-800">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[#eab308]">★</span> {deal.rating}  <span className="hidden sm:inline">Critics: {deal.critics}</span>
+                        <span className="text-[#eab308]">★</span> {deal.rating > 0 ? `${(deal.rating / 10).toFixed(1)} / 10` : 'N/A'}  <span className="hidden sm:inline">Critics: {deal.critics}</span>
                       </div>
                       {deal.deck && (
                          <div className="flex items-center gap-1 text-[#00e676] font-semibold flex-shrink-0">
@@ -353,7 +370,8 @@ export default function Deals({ onViewChange }: DealsProps) {
 
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -577,9 +595,13 @@ export default function Deals({ onViewChange }: DealsProps) {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {mockHotDeals.slice(0, 4).map(deal => (
-                <div key={deal.title} className="bg-transparent group cursor-pointer">
-                  <div className="relative h-24 bg-slate-900 rounded-lg overflow-hidden border border-slate-800 mb-2 group-hover:border-slate-600 transition-colors">
+              {mockHotDeals.slice(0, 4).map(deal => {
+                const matchedGame = games.find(g => g.title.toLowerCase().includes(deal.title.toLowerCase().split(':')[0])) || games[0];
+                return (
+                <div key={deal.title}
+                     onClick={() => onSelectGame(matchedGame.id)}
+                     className="bg-[#12141c] border border-slate-800 rounded-lg p-2 group cursor-pointer hover:border-[#00b0ff]/50 hover:-translate-y-1 hover:shadow-[0_0_15px_rgba(0,176,255,0.2)] transition-all duration-300">
+                  <div className="relative h-24 bg-slate-900 rounded-lg overflow-hidden border border-slate-800 mb-2">
                     <img src={deal.image} className="w-full h-full object-cover" alt="Trending" />
                   </div>
                   <h4 className="text-xs font-bold text-white truncate mb-1 group-hover:text-[#00b0ff] transition-colors">{deal.title}</h4>
@@ -589,13 +611,29 @@ export default function Deals({ onViewChange }: DealsProps) {
                   </div>
                   <span className="bg-[#ff1744] text-white px-1.5 py-0.5 rounded text-[9px] font-bold">-{deal.discount}%</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
 
         </div>
       </div>
+      
+      {/* Back to Top Button */}
+      <AnimatePresence>
+        {showBackToTop && (
+          <motion.button
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="fixed bottom-8 right-8 z-50 p-4 bg-[#0a0d14] border border-[#00b0ff]/30 text-[#00b0ff] rounded-full shadow-[0_0_20px_rgba(0,176,255,0.3)] hover:shadow-[0_0_30px_rgba(0,176,255,0.6)] hover:bg-[#00b0ff]/10 hover:-translate-y-1 transition-all group"
+          >
+            <ArrowUp className="w-6 h-6 group-hover:scale-110 transition-transform" />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
