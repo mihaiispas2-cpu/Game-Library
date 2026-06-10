@@ -62,4 +62,6 @@ export interface Game {
     minimum?: string;
     recommended?: string;
   } | null;
+  launch_price?: number | null;
+  historical_low?: number | null;
 }

@@ -118,7 +118,9 @@ export default function GameDetailsPage({
             reviews: data.reviews || [],
             screenshots: data.screenshots || [],
             trailer_url: data.trailer_url || data.trailerUrl || '',
-            system_requirements: data.system_requirements || null
+            system_requirements: data.system_requirements || null,
+            launch_price: data.launch_price || null,
+            historical_low: data.historical_low || null
           };
           setGame(mappedGame);
         }

@@ -12,7 +12,10 @@ interface PriceHistoryEntry {
   id: string;
   game_id: string;
   price: number;
-  created_at: string;
+  recorded_at: string;
+  launch_price?: number;
+  historical_low?: number;
+  avg_sale_price?: number;
 }
 
 export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
@@ -26,7 +29,7 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
         .from('price_history')
         .select('*')
         .eq('game_id', game.id)
-        .order('created_at', { ascending: true });
+        .order('recorded_at', { ascending: true });
         
       if (!error && data) {
         setHistory(data);
@@ -38,23 +41,34 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
   }, [game.id]);
 
   const currentPrice = game.lowestPrice || game.originalPrice || 0;
-  // Calculate launch price based on current discounted price and discount percentage
-  const launchPrice = game.discount > 0 ? currentPrice / (1 - game.discount / 100) : currentPrice;
   
-  const historyPrices = history.map(h => h.price);
+  const latestRecord = history[history.length - 1];
+  const launchPrice = game.launch_price || game.originalPrice || currentPrice;
+  const historicalLow = game.historical_low || currentPrice;
+  const lowestEver = historicalLow;
+  const avgSalePrice = latestRecord?.avg_sale_price || 0;
+  const canShowAdditionalStats = historicalLow > 0 && historicalLow !== currentPrice;
   
-  // Historical low from all price records
-  const canShowAdditionalStats = historyPrices.length > 1;
-  const lowestEver = canShowAdditionalStats ? Math.min(...historyPrices) : currentPrice;
-  
-  // Average sale price (prices that are less than the launch price)
-  const salePrices = historyPrices.filter(p => p < launchPrice);
-  const avgSalePrice = salePrices.length > 0 ? salePrices.reduce((a, b) => a + b, 0) / salePrices.length : 0;
-  
-  const chartData = history.map(h => ({
-    date: format(new Date(h.created_at), 'MMM dd, yyyy'),
+  let chartData = history.map(h => ({
+    date: format(new Date(h.recorded_at), 'MMM dd, yyyy'),
     price: h.price
   }));
+
+  if (history.length < 2) {
+    const syntheticData = [];
+    
+    if (launchPrice > 0) {
+      syntheticData.push({ date: game.releaseDate || 'Launch', price: launchPrice });
+    }
+    if (historicalLow > 0 && historicalLow < currentPrice) {
+      syntheticData.push({ date: 'Historical Low', price: historicalLow });
+    }
+    if (currentPrice > 0) {
+      syntheticData.push({ date: 'Current', price: currentPrice });
+    }
+    
+    chartData = syntheticData;
+  }
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -93,7 +107,7 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
             ${launchPrice.toFixed(2)}
           </span>
           <span className="text-[10px] text-slate-500 font-mono block">
-            {history.length > 0 ? format(new Date(history[0].created_at), 'MMM dd, yyyy') : game.releaseDate}
+            {game.releaseDate}
           </span>
         </div>
 
@@ -173,39 +187,43 @@ export default function PriceHistoryChart({ game }: PriceHistoryChartProps) {
           <div className="h-64 flex items-center justify-center text-slate-500 font-mono text-sm animate-pulse">
             Loading price history...
           </div>
-        ) : history.length === 0 ? (
+        ) : chartData.length === 0 ? (
           <div className="h-64 flex items-center justify-center text-slate-500 font-mono text-sm border border-dashed border-slate-800 rounded-xl">
             No price history available yet
           </div>
         ) : (
-          <div className="h-80 w-full mt-6">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="#6b7280" 
-                  fontSize={12}
-                  tickMargin={10}
-                  tickFormatter={(val) => val} // Can be refined to show fewer labels on mobile
-                />
-                <YAxis 
-                  stroke="#6b7280" 
-                  fontSize={12}
-                  tickFormatter={(value) => `$${value}`}
-                  domain={['dataMin - 10', 'dataMax + 10']}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Line 
-                  type="stepAfter" 
-                  dataKey="price" 
-                  stroke="#00e676" 
-                  strokeWidth={2} 
-                  dot={{ r: 4, strokeWidth: 2, fill: "#111221" }} 
-                  activeDot={{ r: 6, fill: "#00e676" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+          <div style={{ width: '100%', height: 320, minHeight: 320 }}>
+            <LineChart 
+              width={800} 
+              height={320} 
+              data={chartData}
+              style={{ width: '100%' }}
+              margin={{ top: 20, right: 30, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+              <XAxis 
+                dataKey="date" 
+                stroke="#6b7280" 
+                fontSize={12}
+                tickMargin={10}
+                tickFormatter={(val) => val} // Can be refined to show fewer labels on mobile
+              />
+              <YAxis 
+                stroke="#6b7280" 
+                fontSize={12}
+                tickFormatter={(value) => `$${value}`}
+                domain={([dataMin, dataMax]: [number, number]) => [Math.max(0, dataMin - 5), dataMax + 5]}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Line 
+                type="stepAfter" 
+                dataKey="price" 
+                stroke="#00e676" 
+                strokeWidth={2} 
+                dot={{ r: 4, strokeWidth: 2, fill: "#111221" }} 
+                activeDot={{ r: 6, fill: "#00e676" }}
+              />
+            </LineChart>
           </div>
         )}
 
